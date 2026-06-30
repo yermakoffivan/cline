@@ -32,6 +32,8 @@ export interface SdkCompactionCoordinatorOptions {
 	sessions: SdkSessionLifecycle
 	messages: SdkMessageCoordinator
 	sessionConfigBuilder: SdkSessionConfigBuilder
+	getDisplayedTaskId: () => string | undefined
+	createTempSessionHost: () => Promise<SdkSessionHost>
 	getWorkspaceRoot: () => Promise<string>
 	postStateToWebview: () => Promise<void>
 }
@@ -54,9 +56,40 @@ export class SdkCompactionCoordinator {
 
 		const activeSession = this.options.sessions.getActiveSession()
 		if (!activeSession) {
-			Logger.warn("[SdkController] compactTask: No active session to compact")
-			this.emitInfo("There is no active task to compact.")
-			await this.options.postStateToWebview()
+			const displayedTaskId = this.options.getDisplayedTaskId()
+			if (!displayedTaskId) {
+				Logger.warn("[SdkController] compactTask: No active session or displayed task to compact")
+				this.emitInfo("There is no task to compact.")
+				await this.options.postStateToWebview()
+				return
+			}
+
+			this.compactInFlight = true
+			let sessionHost: SdkSessionHost | undefined
+			try {
+				sessionHost = await this.options.createTempSessionHost()
+				await this.runCompaction(sessionHost, displayedTaskId, () => {
+					const currentSession = this.options.sessions.getActiveSession()
+					if (currentSession) {
+						return currentSession.sessionId === displayedTaskId && !currentSession.isRunning
+							? currentSession.sdkHost
+							: undefined
+					}
+					return this.options.getDisplayedTaskId() === displayedTaskId ? sessionHost : undefined
+				})
+			} catch (error) {
+				Logger.error("[SdkController] compactTask failed:", error)
+				this.emitInfo(COMPACTION_FAILURE_MESSAGE, displayedTaskId)
+				await this.options.postStateToWebview()
+			} finally {
+				try {
+					await sessionHost?.dispose("compactTask")
+				} catch (error) {
+					Logger.error("[SdkController] compactTask failed to dispose temporary session host:", error)
+				} finally {
+					this.compactInFlight = false
+				}
+			}
 			return
 		}
 
@@ -83,7 +116,11 @@ export class SdkCompactionCoordinator {
 		}
 	}
 
-	private async runCompaction(sdkHost: SdkSessionHost, sessionId: string): Promise<void> {
+	private async runCompaction(
+		sdkHost: SdkSessionHost,
+		sessionId: string,
+		resolvePersistenceHost: () => SdkSessionHost | undefined = () => sdkHost,
+	): Promise<void> {
 		if (!sdkHost.updateSessionCompactionState) {
 			this.emitInfo(COMPACTION_UNSUPPORTED_MESSAGE, sessionId)
 			await this.options.postStateToWebview()
@@ -124,7 +161,11 @@ export class SdkCompactionCoordinator {
 		if (!result.compactionState) {
 			throw new Error("Compaction did not return durable state.")
 		}
-		const persisted = await sdkHost.updateSessionCompactionState(sessionId, result.compactionState)
+		const persistenceHost = resolvePersistenceHost()
+		if (!persistenceHost?.updateSessionCompactionState) {
+			throw new Error("Compaction target changed before durable state could be persisted.")
+		}
+		const persisted = await persistenceHost.updateSessionCompactionState(sessionId, result.compactionState)
 		if (!persisted.updated) {
 			throw new Error("Compaction sidecar could not be persisted.")
 		}
@@ -150,11 +191,12 @@ export class SdkCompactionCoordinator {
 
 	private emitInfo(text: string, sessionId?: string): void {
 		const activeSessionId = this.options.sessions.getActiveSession()?.sessionId
-		if (sessionId && activeSessionId !== sessionId) {
+		const displayedTaskId = this.options.getDisplayedTaskId()
+		const targetSessionId = activeSessionId ?? displayedTaskId
+		if (sessionId && targetSessionId !== sessionId) {
 			Logger.warn(`[SdkController] compactTask: skipped info for inactive session ${sessionId}`)
 			return
 		}
-		const targetSessionId = sessionId ?? activeSessionId ?? ""
 		const infoMessage: ClineMessage = {
 			ts: Date.now(),
 			type: "say",
@@ -164,7 +206,7 @@ export class SdkCompactionCoordinator {
 		}
 		this.options.messages.appendAndEmit([infoMessage], {
 			type: "status",
-			payload: { sessionId: targetSessionId, status: "running" },
+			payload: { sessionId: sessionId ?? targetSessionId ?? "", status: "running" },
 		})
 	}
 }
