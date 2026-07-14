@@ -205,14 +205,14 @@ function getAuthCredentialTelemetryProperties(
 ): AuthCredentialTelemetryProperties {
 	const authProperties: AuthCredentialTelemetryProperties = {};
 
-	const sessionStartedAt = credentials.metadata?.sessionStartedAt;
+	const sessionStartedAtMs = credentials.metadata?.sessionStartedAtMs;
 
 	if (
-		typeof sessionStartedAt === "number" &&
-		Number.isFinite(sessionStartedAt) &&
-		sessionStartedAt > 0
+		typeof sessionStartedAtMs === "number" &&
+		Number.isFinite(sessionStartedAtMs) &&
+		sessionStartedAtMs > 0
 	) {
-		authProperties.sessionDurationMs = Date.now() - sessionStartedAt;
+		authProperties.sessionDurationMs = Date.now() - sessionStartedAtMs;
 	}
 
 	return authProperties;
@@ -445,7 +445,7 @@ async function registerWorkOSTokens(
 	return toClineCredentials(
 		requireClineTokenResponse(json, "Invalid token exchange response"),
 		provider ?? options.provider,
-		{ metadata: { sessionStartedAt: Date.now() } },
+		{ metadata: { sessionStartedAtMs: Date.now() } },
 	);
 }
 
@@ -491,7 +491,7 @@ async function exchangeAuthorizationCode(
 	return toClineCredentials(
 		requireClineTokenResponse(json, "Invalid token exchange response"),
 		provider ?? options.provider,
-		{ metadata: { sessionStartedAt: Date.now() } },
+		{ metadata: { sessionStartedAtMs: Date.now() } },
 	);
 }
 
