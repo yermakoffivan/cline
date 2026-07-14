@@ -211,10 +211,10 @@ export class VscodeTerminalManager {
 		// if shell integration is not available, remove terminal so it does not get reused as it may be running a long-running process
 		process.once("no_shell_integration", () => {
 			Logger.log(`no_shell_integration received for terminal ${vscodeTerminalInfo.id}`)
-			// Remove the terminal so we can't reuse it (in case it's running a long-running process)
-			TerminalRegistry.removeTerminal(vscodeTerminalInfo.id)
-			this.terminalIds.delete(vscodeTerminalInfo.id)
-			this.processes.delete(vscodeTerminalInfo.id)
+			// Commands without shell integration cannot be observed after the fallback
+			// completes. Close the terminal before releasing it so its shell process
+			// cannot outlive Cline's ownership of it.
+			this.closeTerminal(vscodeTerminalInfo)
 		})
 
 		const promise = new Promise<void>((resolve, reject) => {
@@ -394,5 +394,12 @@ export class VscodeTerminalManager {
 		// and existing terminals with a different effective shell are simply
 		// skipped during reuse matching.
 		this.defaultTerminalProfile = profileId
+	}
+
+	private closeTerminal(terminalInfo: TerminalInfo): void {
+		this.terminalIds.delete(terminalInfo.id)
+		this.processes.delete(terminalInfo.id)
+		terminalInfo.terminal.dispose()
+		TerminalRegistry.removeTerminal(terminalInfo.id)
 	}
 }
