@@ -235,8 +235,8 @@ export function captureAuthSucceeded(
 	telemetry: ITelemetryService | undefined,
 	provider?: string,
 	details?: {
-		session_id?: string;
-		session_started_at?: number;
+		sessionId?: string;
+		sessionStartedAtMs?: number;
 	},
 ): void {
 	emit(telemetry, CORE_TELEMETRY_EVENTS.USER.AUTH_SUCCEEDED, {
@@ -263,8 +263,8 @@ export function captureAuthLoggedOut(
 	details?: {
 		status?: number;
 		errorCode?: string;
-		session_id?: string;
-		session_started_at?: number;
+		sessionId?: string;
+		sessionStartedAtMs?: number;
 	},
 ): void {
 	emit(telemetry, CORE_TELEMETRY_EVENTS.USER.AUTH_LOGGED_OUT, {
@@ -290,8 +290,8 @@ export function captureAuthRefreshSoftFailure(
 		errorCode?: string;
 		errorName?: string;
 		tokenExpired?: boolean;
-		session_id?: string;
-		session_started_at?: number;
+		sessionId?: string;
+		sessionStartedAtMs?: number;
 	},
 ): void {
 	emit(telemetry, CORE_TELEMETRY_EVENTS.USER.AUTH_REFRESH_SOFT_FAILURE, {
