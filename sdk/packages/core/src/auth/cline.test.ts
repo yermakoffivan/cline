@@ -54,7 +54,7 @@ describe("auth/cline getValidClineCredentials", () => {
 		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(100_000);
 		const current = createCredentials({
 			expires: 101_000,
-			metadata: { provider: "google", sessionStartedAt: 12_345 },
+			metadata: { provider: "google", sessionStartedAtMs: 12_345 },
 		});
 		const fetchMock = vi.fn(
 			async () =>
@@ -88,14 +88,14 @@ describe("auth/cline getValidClineCredentials", () => {
 			email: "new@example.com",
 			metadata: {
 				provider: "google",
-				sessionStartedAt: 12_345,
+				sessionStartedAtMs: 12_345,
 				tokenType: "Bearer",
 			},
 		});
 		nowSpy.mockRestore();
 	});
 
-	it("does not add sessionStartedAt when refreshing credentials that do not already have it", async () => {
+	it("does not add sessionStartedAtMs when refreshing credentials that do not already have it", async () => {
 		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(100_000);
 		const current = createCredentials({
 			expires: 101_000,
@@ -130,7 +130,7 @@ describe("auth/cline getValidClineCredentials", () => {
 			provider: "google",
 			tokenType: "Bearer",
 		});
-		expect(result?.metadata).not.toHaveProperty("sessionStartedAt");
+		expect(result?.metadata).not.toHaveProperty("sessionStartedAtMs");
 		nowSpy.mockRestore();
 	});
 
@@ -140,7 +140,7 @@ describe("auth/cline getValidClineCredentials", () => {
 			access: createJwt({ sid: "sid-1", sub: "user-1" }),
 			expires: 101_000,
 			accountId: "cline-user-1",
-			metadata: { provider: "google", sessionStartedAt: 12_345 },
+			metadata: { provider: "google", sessionStartedAtMs: 12_345 },
 		});
 		globalThis.fetch = vi.fn(
 			async () =>
@@ -169,8 +169,8 @@ describe("auth/cline getValidClineCredentials", () => {
 					reason: "invalid_grant",
 					status: 401,
 					errorCode: "invalid_grant",
-					session_id: "sid-1",
-					session_started_at: 12_345,
+					sessionId: "sid-1",
+					sessionDurationMs: 12_345,
 				}),
 			}),
 		);
@@ -185,7 +185,7 @@ describe("auth/cline getValidClineCredentials", () => {
 			accountId: undefined,
 			metadata: {
 				provider: "google",
-				sessionStartedAt: 67_890,
+				sessionDurationMs: 67_890,
 				userInfo: {
 					subject: "subject-2",
 					email: "user@example.com",
@@ -225,8 +225,8 @@ describe("auth/cline getValidClineCredentials", () => {
 				properties: expect.objectContaining({
 					status: 500,
 					tokenExpired: false,
-					session_id: "sid-2",
-					session_started_at: 67_890,
+					sessionId: "sid-2",
+					sessionDurationMs: Date.now() - 67_890,
 				}),
 			}),
 		);
@@ -362,7 +362,7 @@ describe("auth/cline loginClineOAuth", () => {
 			accountId: "acct-1",
 			email: "user@example.com",
 			metadata: {
-				sessionStartedAt: 200_000,
+				sessionStartedAtMs: 200_000,
 				tokenType: "Bearer",
 			},
 		});
@@ -382,8 +382,8 @@ describe("auth/cline loginClineOAuth", () => {
 				event: "user.auth_succeeded",
 				properties: expect.objectContaining({
 					provider: "cline",
-					session_id: "sid-login",
-					session_started_at: 200_000,
+					sessionId: "sid-login",
+					sessionDurationMs: Date.now() - 200_000,
 				}),
 			}),
 		);
