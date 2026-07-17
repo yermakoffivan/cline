@@ -167,52 +167,68 @@ export async function executeForeground(
 	foregroundCommands?: SdkForegroundCommandCoordinator,
 ): Promise<string> {
 	const terminalCommand = formatCommandForTerminal(command)
-	const terminalInfo = await terminalManager.getOrCreateTerminal(cwd)
-	terminalInfo.terminal.show()
-
-	const process = terminalManager.runCommand(terminalInfo, terminalCommand)
-	const outputLines: string[] = []
-	let droppedLines = 0
-
-	// Accumulate output lines to return the full output once the command completes.
-	// The chat shows command output at completion, not incrementally.
-	//
-	// This is a second buffer on top of the process's own `fullOutput` (capped at
-	// MAX_FULL_OUTPUT_SIZE — see VscodeTerminalProcess), so it needs its own cap:
-	// a long-running command emitting many lines must not accumulate them here
-	// without bound. Once the cap is hit, keep only the head and tail — matching
-	// truncateCommandOutput's own head/tail strategy below — since build/test
-	// failures usually appear at the end of output.
-	const maxBufferedLines = MAX_UNRETRIEVED_LINES
-	const bufferLine = (line: string): void => {
-		if (outputLines.length < maxBufferedLines) {
-			outputLines.push(line)
-		} else {
-			outputLines.shift()
-			outputLines.push(line)
-			droppedLines++
-		}
-	}
-	process.on("line", bufferLine)
-
-	// Handle abort signal
-	if (abortSignal) {
-		const onAbort = () => {
-			process.continue()
-		}
-		const cleanupAbortListener = () => abortSignal.removeEventListener("abort", onAbort)
-		abortSignal.addEventListener("abort", onAbort, { once: true })
-		process.once("completed", cleanupAbortListener)
-		process.once("continue", cleanupAbortListener)
-	}
 
 	// "Proceed While Running": register a per-invocation handle so the user
 	// can detach this command. Detaching redirects the remaining output to a
 	// log file and resolves the awaited promise; the command keeps running in
 	// the user's terminal (and the terminal stays busy until it completes).
+	//
+	// Registered BEFORE terminal acquisition so every command in a parallel
+	// run_commands batch is registered before the user can click the button.
+	// A command still awaiting its terminal when the user detaches records the
+	// request and applies it the moment its process starts — otherwise that
+	// late command would re-block the turn the button just released.
 	let detachedLogFilePath: string | undefined
+	let detachRequested = false
+	let applyDetach: (() => void) | undefined
 	const unregister = foregroundCommands?.register({
 		detach: () => {
+			detachRequested = true
+			applyDetach?.()
+		},
+	})
+
+	try {
+		const terminalInfo = await terminalManager.getOrCreateTerminal(cwd)
+		terminalInfo.terminal.show()
+
+		const process = terminalManager.runCommand(terminalInfo, terminalCommand)
+		const outputLines: string[] = []
+		let droppedLines = 0
+
+		// Accumulate output lines to return the full output once the command completes.
+		// The chat shows command output at completion, not incrementally.
+		//
+		// This is a second buffer on top of the process's own `fullOutput` (capped at
+		// MAX_FULL_OUTPUT_SIZE — see VscodeTerminalProcess), so it needs its own cap:
+		// a long-running command emitting many lines must not accumulate them here
+		// without bound. Once the cap is hit, keep only the head and tail — matching
+		// truncateCommandOutput's own head/tail strategy below — since build/test
+		// failures usually appear at the end of output.
+		const maxBufferedLines = MAX_UNRETRIEVED_LINES
+		const bufferLine = (line: string): void => {
+			if (outputLines.length < maxBufferedLines) {
+				outputLines.push(line)
+			} else {
+				outputLines.shift()
+				outputLines.push(line)
+				droppedLines++
+			}
+		}
+		process.on("line", bufferLine)
+
+		// Handle abort signal
+		if (abortSignal) {
+			const onAbort = () => {
+				process.continue()
+			}
+			const cleanupAbortListener = () => abortSignal.removeEventListener("abort", onAbort)
+			abortSignal.addEventListener("abort", onAbort, { once: true })
+			process.once("completed", cleanupAbortListener)
+			process.once("continue", cleanupAbortListener)
+		}
+
+		applyDetach = () => {
 			if (detachedLogFilePath !== undefined) {
 				return
 			}
@@ -224,65 +240,67 @@ export async function executeForeground(
 			// (log-only) output doesn't mutate outputLines while it's read.
 			process.detach()
 			process.removeListener("line", bufferLine)
-		},
-	})
+		}
+		if (detachRequested) {
+			applyDetach()
+		}
 
-	try {
 		// Wait for completion (or detach, which also resolves the promise)
 		await process
+
+		if (abortSignal?.aborted) {
+			throw new Error("Command execution aborted")
+		}
+
+		const bufferedOutput =
+			droppedLines > 0
+				? [...outputLines, `\n... (${droppedLines} earlier lines dropped) ...\n`].join("\n")
+				: outputLines.join("\n")
+		const output = truncateCommandOutput(bufferedOutput.trim(), {
+			maxChars: maxOutputChars,
+		})
+
+		if (detachedLogFilePath !== undefined) {
+			return [
+				"The user chose to proceed while the command is still running in their terminal.",
+				`This is partial output; further output is being redirected to this file, which you can read to check progress: ${detachedLogFilePath}`,
+				output.length > 0 ? `Output so far:\n${output}` : "No output so far.",
+			].join("\n")
+		}
+
+		const completionDetails = process.getCompletionDetails?.()
+
+		// A terminal closed mid-command has no exit code and no reliable output —
+		// whatever the command was doing (e.g. running a test suite) was interrupted,
+		// so this must never look like success to the agent.
+		if (completionDetails?.terminalClosed) {
+			const result =
+				output.length > 0
+					? `[Terminal closed while the command was running; output may be incomplete]\n${output}`
+					: "[Terminal closed while the command was running; no output was captured]"
+			throw new CommandExitError(1, result)
+		}
+
+		// Plumb the exit code from onDidEndTerminalShellExecution through to the tool
+		// result. When shell integration reports a non-zero exit code, throw
+		// CommandExitError so the SDK's shell tool wrapper marks the result as
+		// `success: false` and includes the exit code in the error message —
+		// matching the background (child_process) executor's behavior.
+		// If no exit code was captured (shell integration present but not reporting
+		// completion for this execution — e.g. a command run inside an ssh session),
+		// we can't determine success/failure, so we return the output as-is
+		// (success: true).
+		const exitCode = completionDetails?.exitCode
+		if (exitCode !== undefined && exitCode !== null && exitCode !== 0) {
+			const result =
+				output.length > 0 ? `[Command exited with code ${exitCode}]\n${output}` : `[Command exited with code ${exitCode}]`
+			throw new CommandExitError(exitCode, result)
+		}
+
+		return output
 	} finally {
 		unregister?.()
 	}
-	if (abortSignal?.aborted) {
-		throw new Error("Command execution aborted")
-	}
-
-	const bufferedOutput =
-		droppedLines > 0
-			? [...outputLines, `\n... (${droppedLines} earlier lines dropped) ...\n`].join("\n")
-			: outputLines.join("\n")
-	const output = truncateCommandOutput(bufferedOutput.trim(), {
-		maxChars: maxOutputChars,
-	})
-
-	if (detachedLogFilePath !== undefined) {
-		return [
-			"The user chose to proceed while the command is still running in their terminal.",
-			`This is partial output; further output is being redirected to this file, which you can read to check progress: ${detachedLogFilePath}`,
-			output.length > 0 ? `Output so far:\n${output}` : "No output so far.",
-		].join("\n")
-	}
-
-	const completionDetails = process.getCompletionDetails?.()
-
-	// A terminal closed mid-command has no exit code and no reliable output —
-	// whatever the command was doing (e.g. running a test suite) was interrupted,
-	// so this must never look like success to the agent.
-	if (completionDetails?.terminalClosed) {
-		const result =
-			output.length > 0
-				? `[Terminal closed while the command was running; output may be incomplete]\n${output}`
-				: "[Terminal closed while the command was running; no output was captured]"
-		throw new CommandExitError(1, result)
-	}
-
-	// Plumb the exit code from onDidEndTerminalShellExecution through to the tool
-	// result. When shell integration reports a non-zero exit code, throw
-	// CommandExitError so the SDK's shell tool wrapper marks the result as
-	// `success: false` and includes the exit code in the error message —
-	// matching the background (child_process) executor's behavior.
-	// If no exit code was captured (shell integration present but not reporting
-	// completion for this execution — e.g. a command run inside an ssh session),
-	// we can't determine success/failure, so we return the output as-is
-	// (success: true).
-	const exitCode = completionDetails?.exitCode
-	if (exitCode !== undefined && exitCode !== null && exitCode !== 0) {
-		const result =
-			output.length > 0 ? `[Command exited with code ${exitCode}]\n${output}` : `[Command exited with code ${exitCode}]`
-		throw new CommandExitError(exitCode, result)
-	}
-
-	return output
 }
 
 // ---------------------------------------------------------------------------
