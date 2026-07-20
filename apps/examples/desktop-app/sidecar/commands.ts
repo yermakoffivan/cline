@@ -1,14 +1,12 @@
 import { execFileSync, spawn } from "node:child_process";
 import {
 	existsSync,
-	mkdirSync,
-	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import type {
 	ClineAccountActionRequest,
@@ -81,6 +79,11 @@ import { normalizeSessionTitle } from "./session-data/common";
 import { discoverChatSessions } from "./session-data/discovery";
 import { readSessionMessages } from "./session-data/messages";
 import { searchWorkspaceFiles } from "./session-data/search";
+import {
+	createTemporaryWorkspace,
+	releaseTemporaryWorkspace,
+	TEMPORARY_PROJECTS_ROOT,
+} from "./temporary-workspaces";
 import type {
 	ChatSessionCommandRequest,
 	JsonRecord,
@@ -741,12 +744,6 @@ function pickWorkspaceDirectory(): string | null {
 	}
 }
 
-function createTemporaryWorkspace(): string {
-	const temporaryProjectsRoot = join(tmpdir(), ".cline");
-	mkdirSync(temporaryProjectsRoot, { recursive: true });
-	return mkdtempSync(join(temporaryProjectsRoot, "new-project-"));
-}
-
 function openFileInEditor(filePath: string): void {
 	const platform = process.platform;
 	const cmd =
@@ -797,6 +794,7 @@ export async function handleCommand(
 			workspaceRoot: ctx.workspaceRoot,
 			cwd: ctx.workspaceRoot,
 			homeDir: homedir(),
+			temporaryWorkspaceRoot: TEMPORARY_PROJECTS_ROOT,
 			platform: process.platform,
 			appVersion: packageJson.version,
 		};
@@ -1321,6 +1319,9 @@ export async function handleCommand(
 	}
 	if (command === "create_temporary_workspace") {
 		return createTemporaryWorkspace();
+	}
+	if (command === "release_temporary_workspace") {
+		return releaseTemporaryWorkspace(String(args?.path ?? ""));
 	}
 	if (command === "open_mcp_settings_file") {
 		const path = ensureMcpSettingsFile();

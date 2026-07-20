@@ -399,12 +399,13 @@ function ChatThreadPane({
 	useEffect(() => {
 		const lastWorkspace = (config.workspaceRoot || config.cwd || "").trim();
 		writeWorkspaceSelectionToWindow({
-			lastWorkspace: isTemporaryWorkspacePath(lastWorkspace)
-				? ""
-				: lastWorkspace,
+			lastWorkspace:
+				newProjectSelected || isTemporaryWorkspacePath(lastWorkspace)
+					? ""
+					: lastWorkspace,
 			workspaces: mergeWorkspacePaths(workspaces, [lastWorkspace]),
 		});
-	}, [config.cwd, config.workspaceRoot, workspaces]);
+	}, [config.cwd, config.workspaceRoot, newProjectSelected, workspaces]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -564,6 +565,20 @@ function ChatThreadPane({
 		void refreshWorkspaces();
 	}, [refreshWorkspaces]);
 
+	const releaseTemporaryWorkspace = useCallback(
+		async (workspacePath: string): Promise<void> => {
+			if (!workspacePath) {
+				return;
+			}
+			await desktopClient
+				.invoke<boolean>("release_temporary_workspace", {
+					path: workspacePath,
+				})
+				.catch(() => false);
+		},
+		[],
+	);
+
 	const switchWorkspace = useCallback(
 		async (workspacePath: string): Promise<boolean> => {
 			const nextWorkspace = workspacePath.trim();
@@ -575,6 +590,9 @@ function ChatThreadPane({
 			const normalizedCurrent = normalizeWorkspacePath(
 				workspaceRef.current.workspaceRoot || workspaceRef.current.cwd || "",
 			);
+			const previousTemporaryWorkspace = newProjectSelected
+				? workspaceRef.current.workspaceRoot || workspaceRef.current.cwd || ""
+				: "";
 			if (normalizedNext === normalizedCurrent) {
 				return true;
 			}
@@ -615,10 +633,16 @@ function ChatThreadPane({
 
 			// Refresh the merged history, stored, and current workspace catalog.
 			void refreshWorkspaces(nextWorkspace);
+			await releaseTemporaryWorkspace(previousTemporaryWorkspace);
 
 			return true;
 		},
-		[setConfig, refreshWorkspaces],
+		[
+			newProjectSelected,
+			setConfig,
+			refreshWorkspaces,
+			releaseTemporaryWorkspace,
+		],
 	);
 
 	useEffect(() => {
@@ -660,6 +684,13 @@ function ChatThreadPane({
 
 	const createTemporaryWorkspace = useCallback(async (): Promise<boolean> => {
 		const requestId = ++workspaceSelectionRequestRef.current;
+		const previousWorkspace = { ...workspaceRef.current };
+		const previousGitBranch = gitBranch;
+		const previousNewProjectSelected = newProjectSelected;
+		const previousTemporaryWorkspace = previousNewProjectSelected
+			? previousWorkspace.workspaceRoot || previousWorkspace.cwd || ""
+			: "";
+		let temporaryWorkspace = "";
 		setNewProjectSelected(true);
 		setGitBranch("no-git");
 		setConfig((prev) => ({
@@ -668,7 +699,7 @@ function ChatThreadPane({
 			cwd: "",
 		}));
 		try {
-			const temporaryWorkspace = await desktopClient.invoke<string>(
+			temporaryWorkspace = await desktopClient.invoke<string>(
 				"create_temporary_workspace",
 			);
 			const validation = await desktopClient.invoke<{ valid?: boolean }>(
@@ -676,6 +707,7 @@ function ChatThreadPane({
 				{ path: temporaryWorkspace },
 			);
 			if (requestId !== workspaceSelectionRequestRef.current) {
+				await releaseTemporaryWorkspace(temporaryWorkspace);
 				return false;
 			}
 			if (validation.valid !== true) {
@@ -688,9 +720,18 @@ function ChatThreadPane({
 				workspaceRoot: temporaryWorkspace,
 				cwd: temporaryWorkspace,
 			}));
+			await releaseTemporaryWorkspace(previousTemporaryWorkspace);
 			return true;
 		} catch (error) {
+			await releaseTemporaryWorkspace(temporaryWorkspace);
 			if (requestId === workspaceSelectionRequestRef.current) {
+				setNewProjectSelected(previousNewProjectSelected);
+				setGitBranch(previousGitBranch);
+				setConfig((prev) => ({
+					...prev,
+					workspaceRoot: previousWorkspace.workspaceRoot,
+					cwd: previousWorkspace.cwd,
+				}));
 				toast({
 					variant: "destructive",
 					title: "New Project unavailable",
@@ -702,7 +743,7 @@ function ChatThreadPane({
 			}
 			return false;
 		}
-	}, [setConfig]);
+	}, [gitBranch, newProjectSelected, releaseTemporaryWorkspace, setConfig]);
 
 	useEffect(() => {
 		void refreshGitBranch();

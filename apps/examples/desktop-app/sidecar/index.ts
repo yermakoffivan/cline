@@ -6,6 +6,7 @@ import {
 } from "./context";
 import { resolveWorkspaceRoot } from "./paths";
 import { startServer } from "./server";
+import { cleanupTemporaryWorkspaces } from "./temporary-workspaces";
 import { BunRuntime, SIDECAR_HOST, SIDECAR_MODE, SIDECAR_PORT } from "./types";
 
 const SHUTDOWN_TIMEOUT_MS = 5_000;
@@ -44,7 +45,14 @@ async function main() {
 			return;
 		}
 		shuttingDown = true;
-		await withTimeout(disposeSidecarContext(ctx, reason), SHUTDOWN_TIMEOUT_MS);
+		try {
+			await withTimeout(
+				disposeSidecarContext(ctx, reason),
+				SHUTDOWN_TIMEOUT_MS,
+			);
+		} finally {
+			cleanupTemporaryWorkspaces();
+		}
 	};
 
 	const shutdownAndExit = (signal: string): void => {
@@ -58,6 +66,7 @@ async function main() {
 	process.once("beforeExit", () => {
 		void shutdown("code_sidecar_before_exit");
 	});
+	process.once("exit", cleanupTemporaryWorkspaces);
 
 	const { port } = startServer(ctx, SIDECAR_PORT, shutdown);
 

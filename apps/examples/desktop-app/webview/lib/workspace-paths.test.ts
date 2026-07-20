@@ -7,6 +7,7 @@ import {
 	normalizeWorkspacePath,
 	parseWorkspaceSelectionStorage,
 	registerHostHomeDirectory,
+	registerTemporaryWorkspaceRoot,
 	workspacePathsFromSessions,
 } from "./workspace-paths";
 
@@ -124,15 +125,21 @@ describe("workspace paths", () => {
 	});
 
 	it("recognizes temporary new-project workspaces", () => {
+		registerTemporaryWorkspaceRoot("/tmp/.cline");
 		expect(isTemporaryWorkspacePath("/tmp/.cline/new-project-a1b2c3")).toBe(
 			true,
 		);
+		expect(
+			isTemporaryWorkspacePath("/projects/.cline/new-project-a1b2c3"),
+		).toBe(false);
+		registerTemporaryWorkspaceRoot("C:\\Temp\\.cline");
 		expect(
 			isTemporaryWorkspacePath("C:\\Temp\\.cline\\new-project-a1b2c3"),
 		).toBe(true);
 		expect(isTemporaryWorkspacePath("/projects/new-project-a1b2c3")).toBe(
 			false,
 		);
+		registerTemporaryWorkspaceRoot("");
 	});
 
 	describe("with a registered host home directory", () => {

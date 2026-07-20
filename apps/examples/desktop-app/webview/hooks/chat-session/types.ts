@@ -4,6 +4,7 @@ export type ProcessContext = {
 	workspaceRoot: string;
 	cwd: string;
 	homeDir?: string;
+	temporaryWorkspaceRoot?: string;
 	platform?: string;
 	appVersion?: string;
 };

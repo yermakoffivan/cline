@@ -47,6 +47,7 @@ import {
 	normalizeWorkspacePath,
 	readWorkspaceSelectionFromWindow,
 	registerHostHomeDirectory,
+	registerTemporaryWorkspaceRoot,
 } from "@/lib/workspace-paths";
 
 export { DEFAULT_CHAT_CONFIG } from "@/hooks/chat-session/constants";
@@ -498,6 +499,9 @@ export function useChatSession() {
 			);
 			if (ctx.homeDir) {
 				registerHostHomeDirectory(ctx.homeDir);
+			}
+			if (ctx.temporaryWorkspaceRoot) {
+				registerTemporaryWorkspaceRoot(ctx.temporaryWorkspaceRoot);
 			}
 			const rememberedWorkspace =
 				readWorkspaceSelectionFromWindow().lastWorkspace;
@@ -1245,11 +1249,8 @@ export function useChatSession() {
 				const fallbackAssistantTurn = extractAssistantTurnDataFromRpcMessages(
 					result?.messages,
 				);
-				const rawAssistantText = assistantText || fallbackAssistantTurn.text;
 				const resolvedAssistantText =
-					result?.finishReason === "error"
-						? userFacingMessage(rawAssistantText)
-						: rawAssistantText;
+					assistantText || fallbackAssistantTurn.text;
 				if (resolvedAssistantText) {
 					const assistantMessageId =
 						activeAssistantMessageIdRef.current ?? makeId("assistant");

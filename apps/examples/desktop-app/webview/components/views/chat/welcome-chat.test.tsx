@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceProvider } from "@/contexts/workspace-context";
+import { registerTemporaryWorkspaceRoot } from "@/lib/workspace-paths";
 import { WelcomeScreen } from "./welcome-chat";
 
 let container: HTMLDivElement;
@@ -28,6 +29,7 @@ beforeEach(() => {
 
 afterEach(async () => {
 	await act(async () => root.unmount());
+	registerTemporaryWorkspaceRoot("");
 	container.remove();
 	vi.restoreAllMocks();
 });
@@ -102,6 +104,7 @@ describe("WelcomeScreen", () => {
 	});
 
 	it("labels a temporary workspace as a new project", async () => {
+		registerTemporaryWorkspaceRoot("/tmp/.cline");
 		await renderWelcome({
 			workspaceRoot: "/tmp/.cline/new-project-a1b2c3",
 		});

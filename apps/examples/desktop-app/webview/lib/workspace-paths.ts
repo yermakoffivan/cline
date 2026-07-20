@@ -50,6 +50,7 @@ const WINDOWS_HOME_OR_DESKTOP_PATTERN =
 	/^[a-z]:[\\/]users[\\/][^\\/]+(?:[\\/]desktop)?$/i;
 
 let hostHomePath = "";
+let temporaryWorkspaceRootPath = "";
 
 /**
  * The webview bundle has no usable `process.env`, so standard home locations
@@ -58,6 +59,14 @@ let hostHomePath = "";
  */
 export function registerHostHomeDirectory(path: string): void {
 	hostHomePath = normalizeWorkspacePath(path);
+}
+
+/** Registers the exact sidecar-owned root used for ephemeral workspaces. */
+export function registerTemporaryWorkspaceRoot(path: string): void {
+	temporaryWorkspaceRootPath = normalizeWorkspacePath(path).replaceAll(
+		"\\",
+		"/",
+	);
 }
 
 function isRegisteredHomeOrDesktop(normalized: string): boolean {
@@ -96,11 +105,14 @@ export function isExcludedWorkspacePath(path: string): boolean {
 }
 
 export function isTemporaryWorkspacePath(path: string): boolean {
-	const segments = normalizeWorkspacePath(path).split(/[\\/]/);
+	if (!temporaryWorkspaceRootPath) {
+		return false;
+	}
+	const normalized = normalizeWorkspacePath(path).replaceAll("\\", "/");
+	const prefix = `${temporaryWorkspaceRootPath}/new-project-`;
 	return (
-		segments.length >= 2 &&
-		segments[segments.length - 2] === ".cline" &&
-		segments[segments.length - 1]?.startsWith("new-project-") === true
+		normalized.startsWith(prefix) &&
+		!normalized.slice(prefix.length).includes("/")
 	);
 }
 
