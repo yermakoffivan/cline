@@ -46,6 +46,7 @@ import {
 import { syncHubTheme, watchSystemHubTheme } from "@/lib/theme";
 import {
 	filterWorkspacePaths,
+	isTemporaryWorkspacePath,
 	mergeWorkspacePaths,
 	normalizeWorkspacePath,
 	readWorkspaceSelectionFromWindow,
@@ -368,9 +369,12 @@ function ChatThreadPane({
 		),
 	);
 	const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
+	const [newProjectSelected, setNewProjectSelected] = useState(false);
 	const hydratedSessionRef = useRef<string | null>(null);
 	const resetThreadRef = useRef<string | null>(null);
 	const manualTitleSessionRef = useRef<string | null>(null);
+	const initialWorkspaceSelectionRef = useRef(false);
+	const workspaceSelectionRequestRef = useRef(0);
 	const workspaceRef = useRef({
 		cwd: config.cwd,
 		workspaceRoot: config.workspaceRoot,
@@ -395,7 +399,9 @@ function ChatThreadPane({
 	useEffect(() => {
 		const lastWorkspace = (config.workspaceRoot || config.cwd || "").trim();
 		writeWorkspaceSelectionToWindow({
-			lastWorkspace,
+			lastWorkspace: isTemporaryWorkspacePath(lastWorkspace)
+				? ""
+				: lastWorkspace,
 			workspaces: mergeWorkspacePaths(workspaces, [lastWorkspace]),
 		});
 	}, [config.cwd, config.workspaceRoot, workspaces]);
@@ -564,6 +570,7 @@ function ChatThreadPane({
 			if (!nextWorkspace) {
 				return false;
 			}
+			const requestId = ++workspaceSelectionRequestRef.current;
 			const normalizedNext = normalizeWorkspacePath(nextWorkspace);
 			const normalizedCurrent = normalizeWorkspacePath(
 				workspaceRef.current.workspaceRoot || workspaceRef.current.cwd || "",
@@ -579,7 +586,11 @@ function ChatThreadPane({
 			if (validation.valid !== true) {
 				return false;
 			}
+			if (requestId !== workspaceSelectionRequestRef.current) {
+				return false;
+			}
 
+			setNewProjectSelected(false);
 			setConfig((prev) => ({
 				...prev,
 				workspaceRoot: nextWorkspace,
@@ -610,6 +621,22 @@ function ChatThreadPane({
 		[setConfig, refreshWorkspaces],
 	);
 
+	useEffect(() => {
+		const latestSessionWorkspace = knownWorkspacePaths[0]?.trim();
+		if (
+			historySession ||
+			initialWorkspaceSelectionRef.current ||
+			!latestSessionWorkspace
+		) {
+			return;
+		}
+		initialWorkspaceSelectionRef.current = true;
+		if (workspaceSelectionRequestRef.current > 0) {
+			return;
+		}
+		void switchWorkspace(latestSessionWorkspace);
+	}, [historySession, knownWorkspacePaths, switchWorkspace]);
+
 	const pickWorkspaceDirectory = useCallback(
 		async (initialPath?: string): Promise<string | null> => {
 			try {
@@ -630,6 +657,52 @@ function ChatThreadPane({
 		},
 		[],
 	);
+
+	const createTemporaryWorkspace = useCallback(async (): Promise<boolean> => {
+		const requestId = ++workspaceSelectionRequestRef.current;
+		setNewProjectSelected(true);
+		setGitBranch("no-git");
+		setConfig((prev) => ({
+			...prev,
+			workspaceRoot: "",
+			cwd: "",
+		}));
+		try {
+			const temporaryWorkspace = await desktopClient.invoke<string>(
+				"create_temporary_workspace",
+			);
+			const validation = await desktopClient.invoke<{ valid?: boolean }>(
+				"validate_workspace_directory",
+				{ path: temporaryWorkspace },
+			);
+			if (requestId !== workspaceSelectionRequestRef.current) {
+				return false;
+			}
+			if (validation.valid !== true) {
+				throw new Error(
+					"The temporary project directory could not be created.",
+				);
+			}
+			setConfig((prev) => ({
+				...prev,
+				workspaceRoot: temporaryWorkspace,
+				cwd: temporaryWorkspace,
+			}));
+			return true;
+		} catch (error) {
+			if (requestId === workspaceSelectionRequestRef.current) {
+				toast({
+					variant: "destructive",
+					title: "New Project unavailable",
+					description:
+						error instanceof Error
+							? error.message
+							: "The temporary project directory could not be created.",
+				});
+			}
+			return false;
+		}
+	}, [setConfig]);
 
 	useEffect(() => {
 		void refreshGitBranch();
@@ -946,19 +1019,23 @@ function ChatThreadPane({
 	const workspaceContextValue = useMemo(
 		() => ({
 			workspaceRoot: resolvedWorkspaceRoot,
+			newProjectSelected,
 			workspaces,
 			listWorkspaces,
 			refreshWorkspaces,
 			switchWorkspace,
 			pickWorkspaceDirectory,
+			createTemporaryWorkspace,
 		}),
 		[
 			resolvedWorkspaceRoot,
+			newProjectSelected,
 			workspaces,
 			listWorkspaces,
 			refreshWorkspaces,
 			switchWorkspace,
 			pickWorkspaceDirectory,
+			createTemporaryWorkspace,
 		],
 	);
 

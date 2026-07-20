@@ -95,6 +95,15 @@ export function isExcludedWorkspacePath(path: string): boolean {
 	);
 }
 
+export function isTemporaryWorkspacePath(path: string): boolean {
+	const segments = normalizeWorkspacePath(path).split(/[\\/]/);
+	return (
+		segments.length >= 2 &&
+		segments[segments.length - 2] === ".cline" &&
+		segments[segments.length - 1]?.startsWith("new-project-") === true
+	);
+}
+
 export function filterWorkspacePaths(paths: readonly string[]): string[] {
 	return paths.filter((path) => !isExcludedWorkspacePath(path));
 }

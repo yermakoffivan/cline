@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	filterWorkspacePaths,
 	isExcludedWorkspacePath,
+	isTemporaryWorkspacePath,
 	mergeWorkspacePaths,
 	normalizeWorkspacePath,
 	parseWorkspaceSelectionStorage,
@@ -50,10 +51,10 @@ describe("workspace paths", () => {
 
 	it("keeps the first-seen order so earlier groups rank first", () => {
 		expect(
-			mergeWorkspacePaths(["/projects/zulu", "/projects/mike"], [
-				"/projects/alpha",
-				"/projects/zulu/",
-			]),
+			mergeWorkspacePaths(
+				["/projects/zulu", "/projects/mike"],
+				["/projects/alpha", "/projects/zulu/"],
+			),
 		).toEqual(["/projects/zulu", "/projects/mike", "/projects/alpha"]);
 	});
 
@@ -120,6 +121,18 @@ describe("workspace paths", () => {
 		expect(
 			isExcludedWorkspacePath("C:\\Users\\Saoud\\.cline\\worktrees\\abc"),
 		).toBe(true);
+	});
+
+	it("recognizes temporary new-project workspaces", () => {
+		expect(isTemporaryWorkspacePath("/tmp/.cline/new-project-a1b2c3")).toBe(
+			true,
+		);
+		expect(
+			isTemporaryWorkspacePath("C:\\Temp\\.cline\\new-project-a1b2c3"),
+		).toBe(true);
+		expect(isTemporaryWorkspacePath("/projects/new-project-a1b2c3")).toBe(
+			false,
+		);
 	});
 
 	describe("with a registered host home directory", () => {

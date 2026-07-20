@@ -4,11 +4,13 @@ import { createContext, useContext } from "react";
 
 type WorkspaceContextValue = {
 	workspaceRoot: string;
+	newProjectSelected: boolean;
 	workspaces: string[];
 	listWorkspaces: () => Promise<string[]>;
 	refreshWorkspaces: () => Promise<void>;
 	switchWorkspace: (workspacePath: string) => Promise<boolean>;
 	pickWorkspaceDirectory: (initialPath?: string) => Promise<string | null>;
+	createTemporaryWorkspace: () => Promise<boolean>;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);

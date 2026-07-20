@@ -1,11 +1,21 @@
 "use client";
 
-import { Check, Folder, GitBranch, Plus, Search } from "lucide-react";
+import {
+	Check,
+	FilePlus2,
+	Folder,
+	GitBranch,
+	Plus,
+	Search,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { normalizeWorkspacePath } from "@/lib/workspace-paths";
+import {
+	isTemporaryWorkspacePath,
+	normalizeWorkspacePath,
+} from "@/lib/workspace-paths";
 
 function formatWorkspacePath(path: string): string {
 	const unixHome = path.match(/^\/Users\/[^/]+\/(.*)$/);
@@ -63,23 +73,28 @@ function WorkspacePicker({
 	onToggle,
 	onClose,
 	workspaceRoot,
+	newProjectSelected,
 	workspaces,
 	onRefreshWorkspaces,
 	onSwitchWorkspace,
 	onPickWorkspaceDirectory,
+	onCreateTemporaryWorkspace,
 }: {
 	open: boolean;
 	onToggle: () => void;
 	onClose: () => void;
 	workspaceRoot: string;
+	newProjectSelected: boolean;
 	workspaces: string[];
 	onRefreshWorkspaces: () => Promise<void>;
 	onSwitchWorkspace: (workspacePath: string) => Promise<boolean>;
 	onPickWorkspaceDirectory: (initialPath?: string) => Promise<string | null>;
+	onCreateTemporaryWorkspace: () => Promise<boolean>;
 }) {
 	const [search, setSearch] = useState("");
 	const [switching, setSwitching] = useState(false);
 	const [picking, setPicking] = useState(false);
+	const [creating, setCreating] = useState(false);
 
 	const normalizedWorkspaceRoot = useMemo(
 		() => normalizeWorkspacePath(workspaceRoot),
@@ -102,10 +117,12 @@ function WorkspacePicker({
 			if (trimmed)
 				byNormalizedPath.set(normalizeWorkspacePath(trimmed), trimmed);
 		};
-		register(workspaceRoot);
+		if (!newProjectSelected && !isTemporaryWorkspacePath(workspaceRoot)) {
+			register(workspaceRoot);
+		}
 		for (const path of workspaces) register(path);
 		return [...byNormalizedPath.values()];
-	}, [workspaceRoot, workspaces]);
+	}, [newProjectSelected, workspaceRoot, workspaces]);
 
 	const filteredWorkspaces = availableWorkspaces.filter((path) =>
 		path.toLowerCase().includes(search.toLowerCase()),
@@ -135,6 +152,25 @@ function WorkspacePicker({
 		}
 	};
 
+	const handleCreateTemporaryWorkspace = async () => {
+		if (creating || picking || switching) return;
+		setCreating(true);
+		onClose();
+		try {
+			await onCreateTemporaryWorkspace();
+		} finally {
+			setCreating(false);
+		}
+	};
+
+	const workspaceLabel = newProjectSelected
+		? "New Project"
+		: !workspaceRoot.trim()
+			? "Select a Workspace"
+			: isTemporaryWorkspacePath(workspaceRoot)
+				? "New Project"
+				: workspaceName(workspaceRoot);
+
 	return (
 		<div className="relative shrink-0">
 			<button
@@ -142,13 +178,11 @@ function WorkspacePicker({
 				aria-haspopup="menu"
 				className={TRIGGER_CLASS}
 				onClick={onToggle}
-				title={workspaceRoot}
+				title={workspaceLabel}
 				type="button"
 			>
 				<Folder className="size-4 shrink-0 text-muted-foreground" />
-				<span className="max-w-44 truncate">
-					{workspaceName(workspaceRoot)}
-				</span>
+				<span className="max-w-44 truncate">{workspaceLabel}</span>
 			</button>
 
 			{open && (
@@ -195,13 +229,23 @@ function WorkspacePicker({
 						</div>
 						<Button
 							className="mt-0.5 w-full justify-start text-xs text-muted-foreground"
-							disabled={switching || picking}
+							disabled={switching || picking || creating}
 							onClick={() => void handleAddWorkspace()}
 							size="sm"
 							variant="ghost"
 						>
 							<Plus className="size-3" />
 							{picking ? "Opening folder picker..." : "Add project..."}
+						</Button>
+						<Button
+							className="w-full justify-start text-xs text-muted-foreground"
+							disabled={switching || picking || creating}
+							onClick={() => void handleCreateTemporaryWorkspace()}
+							size="sm"
+							variant="ghost"
+						>
+							<FilePlus2 className="size-3" />
+							{creating ? "Creating project..." : "New project"}
 						</Button>
 					</div>
 				</div>
@@ -212,6 +256,7 @@ function WorkspacePicker({
 
 function BranchPicker({
 	open,
+	disabled,
 	onToggle,
 	onClose,
 	currentBranch,
@@ -219,6 +264,7 @@ function BranchPicker({
 	onSwitchGitBranch,
 }: {
 	open: boolean;
+	disabled: boolean;
 	onToggle: () => void;
 	onClose: () => void;
 	currentBranch: string;
@@ -272,7 +318,12 @@ function BranchPicker({
 			<button
 				aria-expanded={open}
 				aria-haspopup="menu"
-				className={cn(TRIGGER_CLASS, "min-w-0 max-w-full")}
+				className={cn(
+					TRIGGER_CLASS,
+					"min-w-0 max-w-full",
+					disabled && "cursor-not-allowed opacity-50",
+				)}
+				disabled={disabled}
 				onClick={onToggle}
 				title={branchLabel}
 				type="button"
@@ -334,25 +385,33 @@ function BranchPicker({
 
 export function WelcomeWorkspaceControls({
 	workspaceRoot,
+	newProjectSelected,
 	workspaces,
 	onRefreshWorkspaces,
 	onSwitchWorkspace,
 	onPickWorkspaceDirectory,
+	onCreateTemporaryWorkspace,
 	currentBranch,
 	onListGitBranches,
 	onSwitchGitBranch,
 }: {
 	workspaceRoot: string;
+	newProjectSelected: boolean;
 	workspaces: string[];
 	onRefreshWorkspaces: () => Promise<void>;
 	onSwitchWorkspace: (workspacePath: string) => Promise<boolean>;
 	onPickWorkspaceDirectory: (initialPath?: string) => Promise<string | null>;
+	onCreateTemporaryWorkspace: () => Promise<boolean>;
 	currentBranch: string;
 	onListGitBranches: () => Promise<{ current: string; branches: string[] }>;
 	onSwitchGitBranch: (branch: string) => Promise<boolean>;
 }) {
 	const [openMenu, setOpenMenu] = useState<"workspace" | "branch" | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const branchDisabled =
+		newProjectSelected ||
+		!workspaceRoot.trim() ||
+		isTemporaryWorkspacePath(workspaceRoot);
 
 	// Close whichever menu is open when clicking outside the control row.
 	useEffect(() => {
@@ -373,6 +432,8 @@ export function WelcomeWorkspaceControls({
 		<div className="flex min-w-0 items-center gap-2" ref={containerRef}>
 			<WorkspacePicker
 				onClose={() => setOpenMenu(null)}
+				onCreateTemporaryWorkspace={onCreateTemporaryWorkspace}
+				newProjectSelected={newProjectSelected}
 				onPickWorkspaceDirectory={onPickWorkspaceDirectory}
 				onRefreshWorkspaces={onRefreshWorkspaces}
 				onSwitchWorkspace={onSwitchWorkspace}
@@ -387,6 +448,7 @@ export function WelcomeWorkspaceControls({
 			/>
 			<BranchPicker
 				currentBranch={currentBranch}
+				disabled={branchDisabled}
 				onClose={() => setOpenMenu(null)}
 				onListGitBranches={onListGitBranches}
 				onSwitchGitBranch={onSwitchGitBranch}

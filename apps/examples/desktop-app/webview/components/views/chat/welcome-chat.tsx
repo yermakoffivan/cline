@@ -95,10 +95,12 @@ export function WelcomeScreen({
 }) {
 	const {
 		workspaceRoot,
+		newProjectSelected,
 		workspaces,
 		refreshWorkspaces,
 		switchWorkspace,
 		pickWorkspaceDirectory,
+		createTemporaryWorkspace,
 	} = useWorkspace();
 	const actions =
 		quickActions.length > 0 ? quickActions : DEFAULT_QUICK_ACTIONS;
@@ -137,11 +139,13 @@ export function WelcomeScreen({
 							<div className="mt-11 flex min-w-0 items-center">
 								<WelcomeWorkspaceControls
 									currentBranch={gitBranch}
+									newProjectSelected={newProjectSelected}
 									onListGitBranches={onListGitBranches}
 									onPickWorkspaceDirectory={pickWorkspaceDirectory}
 									onRefreshWorkspaces={refreshWorkspaces}
 									onSwitchGitBranch={onSwitchGitBranch}
 									onSwitchWorkspace={switchWorkspace}
+									onCreateTemporaryWorkspace={createTemporaryWorkspace}
 									workspaceRoot={workspaceRoot}
 									workspaces={workspaces}
 								/>

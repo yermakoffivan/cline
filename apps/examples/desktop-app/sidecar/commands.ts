@@ -1,12 +1,14 @@
 import { execFileSync, spawn } from "node:child_process";
 import {
 	existsSync,
+	mkdirSync,
+	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import type {
 	ClineAccountActionRequest,
@@ -739,6 +741,12 @@ function pickWorkspaceDirectory(): string | null {
 	}
 }
 
+function createTemporaryWorkspace(): string {
+	const temporaryProjectsRoot = join(tmpdir(), ".cline");
+	mkdirSync(temporaryProjectsRoot, { recursive: true });
+	return mkdtempSync(join(temporaryProjectsRoot, "new-project-"));
+}
+
 function openFileInEditor(filePath: string): void {
 	const platform = process.platform;
 	const cmd =
@@ -1310,6 +1318,9 @@ export async function handleCommand(
 	}
 	if (command === "pick_workspace_directory") {
 		return pickWorkspaceDirectory();
+	}
+	if (command === "create_temporary_workspace") {
+		return createTemporaryWorkspace();
 	}
 	if (command === "open_mcp_settings_file") {
 		const path = ensureMcpSettingsFile();

@@ -55,11 +55,13 @@ describe("ChatInputBar", () => {
 					<WorkspaceProvider
 						value={{
 							workspaceRoot: "/workspace/cline",
+							newProjectSelected: false,
 							workspaces: ["/workspace/cline"],
 							listWorkspaces: vi.fn(async () => ["/workspace/cline"]),
 							refreshWorkspaces: vi.fn(async () => undefined),
 							switchWorkspace: vi.fn(async () => true),
 							pickWorkspaceDirectory: vi.fn(async () => null),
+							createTemporaryWorkspace: vi.fn(async () => true),
 						}}
 					>
 						<ChatInputBar
@@ -134,11 +136,13 @@ describe("ChatInputBar", () => {
 				<WorkspaceProvider
 					value={{
 						workspaceRoot: "/workspace/cline",
+						newProjectSelected: false,
 						workspaces: ["/workspace/cline"],
 						listWorkspaces: vi.fn(async () => ["/workspace/cline"]),
 						refreshWorkspaces: vi.fn(async () => undefined),
 						switchWorkspace: vi.fn(async () => true),
 						pickWorkspaceDirectory: vi.fn(async () => null),
+						createTemporaryWorkspace: vi.fn(async () => true),
 					}}
 				>
 					<ChatInputBar
